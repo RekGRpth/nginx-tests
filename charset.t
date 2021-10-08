@@ -34,6 +34,7 @@ events {
 
 http {
     %%TEST_GLOBALS_HTTP%%
+    default_type text/plain;
 
     types {
         text/html html;
