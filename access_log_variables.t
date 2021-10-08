@@ -105,7 +105,7 @@ EOF
 $t->stop();
 
 my $log = $t->read_file('iso8601.log');
-like($log, qr!/iso8601 \d{4}-\d\d-\d\dT\d\d:\d\d:\d\d[+-]\d\d:\d\d!,
+like($log, qr!/iso8601 \d{4}-\d\d-\d\d \d\d:\d\d:\d\d[+-]\d\d:\d\d!,
 	'time_iso8601');
 
 $log = $t->read_file('local.log');
