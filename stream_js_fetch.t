@@ -45,11 +45,6 @@ http {
         location /njs {
             js_content test.njs;
         }
-    }
-
-    server {
-        listen       127.0.0.1:8080;
-        server_name  aaa;
 
         location /validate {
             js_content test.validate;
@@ -118,8 +113,7 @@ $t->write_file('test.js', <<EOF);
                 s.off('upstream');
 
                 let reply = await ngx.fetch('http://127.0.0.1:$p/validate',
-                                            {body: collect.slice(2,4),
-                                             headers: {Host:'aaa'}});
+                                            {body: collect.slice(2,4)});
 
                 (reply.status == 200) ? s.done(): s.deny();
 
@@ -139,8 +133,7 @@ $t->write_file('test.js', <<EOF);
                 s.off('upstream');
 
                 let reply = await ngx.fetch('http://127.0.0.1:$p/validate',
-                                            {body: collect.slice(2,4),
-                                             headers: {Host:'aaa'}});
+                                            {body: collect.slice(2,4)});
 
                 if (reply.status == 200) {
                     s.send(collect.slice(4), flags);
@@ -153,15 +146,13 @@ $t->write_file('test.js', <<EOF);
     }
 
     async function access_ok(s) {
-        let reply = await ngx.fetch('http://127.0.0.1:$p/success',
-                                    {headers: {Host:'aaa'}});
+        let reply = await ngx.fetch('http://127.0.0.1:$p/success');
 
         (reply.status == 200) ? s.allow(): s.deny();
     }
 
     async function access_nok(s) {
-        let reply = await ngx.fetch('http://127.0.0.1:$p/fail',
-                                    {headers: {Host:'aaa'}});
+        let reply = await ngx.fetch('http://127.0.0.1:$p/fail');
 
         (reply.status == 200) ? s.allow(): s.deny();
     }
@@ -178,9 +169,6 @@ $t->waitforsocket('127.0.0.1:' . port(8091));
 
 ###############################################################################
 
-local $TODO = 'not yet'
-	unless http_get('/njs') =~ /^([.0-9]+)$/m && $1 ge '0.5.1';
-
 is(stream('127.0.0.1:' . port(8081))->io('###'), '', 'preread not enough');
 is(stream('127.0.0.1:' . port(8081))->io("\xAB\xCDQZ##"), "\xAB\xCDQZ##",
 	'preread validated');
@@ -191,7 +179,7 @@ is(stream('127.0.0.1:' . port(8081))->io("\xAB\xCDQQ##"), '',
 
 TODO: {
 todo_skip 'leaves coredump', 3 unless $ENV{TEST_NGINX_UNSAFE}
-	or http_get('/njs') =~ /^([.0-9]+)$/m && $1 ge '0.7.7';
+	or has_version('0.7.7');
 
 my $s = stream('127.0.0.1:' . port(8082));
 is($s->io("\xAB\xCDQZ##", read => 1), '##', 'filter validated');
@@ -204,6 +192,25 @@ is(stream('127.0.0.1:' . port(8082))->io("\xAB\xCDQQ##"), '',
 
 is(stream('127.0.0.1:' . port(8083))->io('ABC'), 'ABC', 'access fetch ok');
 is(stream('127.0.0.1:' . port(8084))->io('ABC'), '', 'access fetch nok');
+
+###############################################################################
+
+sub has_version {
+	my $need = shift;
+
+	http_get('/njs') =~ /^([.0-9]+)$/m;
+
+	my @v = split(/\./, $1);
+	my ($n, $v);
+
+	for $n (split(/\./, $need)) {
+		$v = shift @v || 0;
+		return 0 if $n > $v;
+		return 1 if $v > $n;
+	}
+
+	return 1;
+}
 
 ###############################################################################
 

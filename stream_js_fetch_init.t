@@ -57,11 +57,6 @@ http {
         location /njs {
             js_content test.njs;
         }
-    }
-
-    server {
-        listen       127.0.0.1:8080;
-        server_name  aaa;
 
         location /success {
             return 200;
@@ -79,8 +74,7 @@ $t->write_file('test.js', <<EOF);
     }
 
     async function access_ok(s) {
-        let reply = await ngx.fetch('http://127.0.0.1:$p/success',
-                                    {headers: {Host:'aaa'}});
+        let reply = await ngx.fetch('http://127.0.0.1:$p/success');
 
         (reply.status == 200) ? s.allow(): s.deny();
     }
@@ -95,10 +89,28 @@ $t->waitforsocket('127.0.0.1:' . port(8090));
 
 ###############################################################################
 
-local $TODO = 'not yet'
-	unless http_get('/njs') =~ /^([.0-9]+)$/m && $1 ge '0.7.9';
+local $TODO = 'not yet' unless has_version('0.7.9');
 
 is(stream('127.0.0.1:' . port(8081))->io('ABC'), 'ABC', 'access fetch ok');
+
+###############################################################################
+
+sub has_version {
+	my $need = shift;
+
+	http_get('/njs') =~ /^([.0-9]+)$/m;
+
+	my @v = split(/\./, $1);
+	my ($n, $v);
+
+	for $n (split(/\./, $need)) {
+		$v = shift @v || 0;
+		return 0 if $n > $v;
+		return 1 if $v > $n;
+	}
+
+	return 1;
+}
 
 ###############################################################################
 
