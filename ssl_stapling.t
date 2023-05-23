@@ -57,6 +57,8 @@ http {
 
     ssl_ciphers DEFAULT:ECCdraft;
 
+    add_header X-SSL-Protocol $ssl_protocol always;
+
     server {
         listen       127.0.0.1:8443 ssl;
         listen       127.0.0.1:8080;
@@ -319,10 +321,11 @@ sub staple {
 		return unless defined $ciphers;
 		my $ssleay = Net::SSLeay::SSLeay();
 		return if ($ssleay < 0x1000200f || $ssleay == 0x20000000);
-		my $sigalgs = 'RSA+SHA256:PSS+SHA256';
-		$sigalgs = $ciphers . '+SHA256' unless $ciphers eq 'RSA';
+		my @sigalgs = ('RSA+SHA256:PSS+SHA256', 'RSA+SHA256');
+		@sigalgs = ($ciphers . '+SHA256') unless $ciphers eq 'RSA';
 		# SSL_CTRL_SET_SIGALGS_LIST
-		Net::SSLeay::CTX_ctrl($ctx, 98, 0, $sigalgs)
+		Net::SSLeay::CTX_ctrl($ctx, 98, 0, $sigalgs[0])
+			or Net::SSLeay::CTX_ctrl($ctx, 98, 0, $sigalgs[1])
 			or die("Failed to set sigalgs");
 	};
 
@@ -341,7 +344,7 @@ sub staple {
 }
 
 sub test_tls13 {
-	return http_get('/', start => 1, SSL => 1) =~ /TLSv1.3/;
+	return http_get('/', SSL => 1) =~ /TLSv1.3/;
 }
 
 ###############################################################################
