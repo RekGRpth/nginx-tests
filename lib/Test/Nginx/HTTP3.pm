@@ -208,6 +208,7 @@ sub handshake {
 	}
 
 	$self->read_tls_message(\$buf, \&parse_tls_finished);
+	$self->{buf} = $buf;
 
 	# tls13_advance_key_schedule(application)
 
@@ -1726,7 +1727,13 @@ mask:
 		& ($level == 3 ? "\x1f" : "\x0f");
 	my $pnl = unpack("C", substr($buf, 0, 1) & "\x03") + 1;
 	substr($buf, $offset, $pnl) ^= substr($mask, 1);
-	my $pn = unpack("C", substr($buf, $offset, $pnl));
+
+	my $pn = 0;
+	for my $n (1 .. $pnl) {
+		$pn += unpack("C", substr($buf, $offset + $n - 1, 1))
+			<< ($pnl - $n) * 8;
+	}
+
 	my $ad = substr($buf, 0, $offset + $pnl);
 	return ($ad, $pnl, $pn);
 }
@@ -1962,7 +1969,8 @@ sub build_stream {
 	my $length = $extra{length} ? $extra{length} : build_int(length($r));
 	my $offset = build_int($extra{offset} ? $extra{offset} : 0);
 	my $sid = defined $extra{sid} ? $extra{sid} : $self->{requests}++;
-	pack("CC", $stream, 4 * $sid) . $offset . $length . $r;
+	$sid = build_int(4 * $sid);
+	pack("C", $stream) . $sid . $offset . $length . $r;
 }
 
 sub parse_int {
