@@ -514,6 +514,18 @@ sub read {
 			goto frames;
 		}
 
+		if (!length($buf) && $eof) {
+			# emulate empty DATA frame
+			$length = 0;
+			$frame->{length} = $length;
+			$frame->{type} = 'DATA';
+			$frame->{data} = '';
+			$frame->{flags} = $eof;
+			$frame->{sid} = $stream;
+			$frame->{uni} = $uni if defined $uni;
+			goto push_me;
+		}
+
 		if (length($self->{frames_incomplete}[$stream]{buf})) {
 			$buf = $self->{frames_incomplete}[$stream]{buf} . $buf;
 		}
@@ -546,16 +558,27 @@ again:
 		my $offset = 0;
 		my ($len, $type);
 
-		if (!length($self->{frames_incomplete}[$stream]{buf})) {
-			($len, $type) = parse_int(substr($buf, $offset));
-			$offset += $len;
-			($len, $length) = parse_int(substr($buf, $offset));
-			$offset += $len;
+		($len, $type) = parse_int(substr($buf, $offset));
 
-			$self->{frames_incomplete}[$stream]{type} = $type;
-			$self->{frames_incomplete}[$stream]{length} = $length;
-			$self->{frames_incomplete}[$stream]{offset} = $offset;
+		if (!defined $len) {
+			$self->{frames_incomplete}[$stream]{buf} = $buf;
+			next;
 		}
+
+		$offset += $len;
+
+		($len, $length) = parse_int(substr($buf, $offset));
+
+		if (!defined $len) {
+			$self->{frames_incomplete}[$stream]{buf} = $buf;
+			next;
+		}
+
+		$offset += $len;
+
+		$self->{frames_incomplete}[$stream]{type} = $type;
+		$self->{frames_incomplete}[$stream]{length} = $length;
+		$self->{frames_incomplete}[$stream]{offset} = $offset;
 
 		if (length($buf) < $self->{frames_incomplete}[$stream]{length}
 			+ $self->{frames_incomplete}[$stream]{offset})
@@ -1975,8 +1998,12 @@ sub build_stream {
 
 sub parse_int {
 	my ($buf) = @_;
+	return undef if length($buf) < 1;
+
 	my $val = unpack("C", substr($buf, 0, 1));
 	my $len = my $plen = 1 << ($val >> 6);
+	return undef if length($buf) < $len;
+
 	$val = $val & 0x3f;
 	while (--$len) {
 		$val = ($val << 8) + unpack("C", substr($buf, $plen - $len, 1))
