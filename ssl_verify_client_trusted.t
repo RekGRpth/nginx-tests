@@ -3,7 +3,7 @@
 # (C) Sergey Kandaurov
 # (C) Nginx, Inc.
 
-# Tests for http ssl module, ssl_verify_client.
+# Tests for http ssl module, ssl_verify_client with ssl_trusted_certificate.
 
 ###############################################################################
 
@@ -25,7 +25,7 @@ select STDERR; $| = 1;
 select STDOUT; $| = 1;
 
 my $t = Test::Nginx->new()->has(qw/http http_ssl sni socket_ssl_sni/)
-	->has_daemon('openssl')->plan(13);
+	->has_daemon('openssl');
 
 $t->write_file_expand('nginx.conf', <<'EOF');
 
@@ -46,67 +46,14 @@ http {
     ssl_session_tickets off;
 
     server {
-        listen       127.0.0.1:8080;
-        server_name  localhost;
+        listen       127.0.0.1:8443 ssl;
+        server_name  trusted;
 
         ssl_certificate_key 1.example.com.key;
         ssl_certificate 1.example.com.crt;
 
         ssl_verify_client on;
-        ssl_client_certificate 2.example.com.crt;
-    }
-
-    server {
-        listen       127.0.0.1:8443 ssl;
-        server_name  on;
-
-        ssl_certificate_key 1.example.com.key;
-        ssl_certificate 1.example.com.crt;
-
-        ssl_verify_client on;
-        ssl_client_certificate 2.example.com.crt;
-    }
-
-    server {
-        listen       127.0.0.1:8443 ssl;
-        server_name  optional;
-
-        ssl_certificate_key 1.example.com.key;
-        ssl_certificate 1.example.com.crt;
-
-        ssl_verify_client optional;
-        ssl_client_certificate 2.example.com.crt;
-        ssl_trusted_certificate 3.example.com.crt;
-    }
-
-    server {
-        listen       127.0.0.1:8443 ssl;
-        server_name  off;
-
-        ssl_certificate_key 1.example.com.key;
-        ssl_certificate 1.example.com.crt;
-
-        ssl_verify_client off;
-        ssl_client_certificate 2.example.com.crt;
-        ssl_trusted_certificate 3.example.com.crt;
-    }
-
-    server {
-        listen       127.0.0.1:8443 ssl;
-        server_name  optional.no.ca;
-
-        ssl_certificate_key 1.example.com.key;
-        ssl_certificate 1.example.com.crt;
-
-        ssl_verify_client optional_no_ca;
-        ssl_client_certificate 2.example.com.crt;
-    }
-
-    server {
-        listen       127.0.0.1:8443 ssl;
-        server_name  no.context;
-
-        ssl_verify_client on;
+        ssl_trusted_certificate 2.example.com.crt;
     }
 }
 
@@ -134,40 +81,17 @@ sleep 1 if $^O eq 'MSWin32';
 
 $t->write_file('t', 'SEE-THIS');
 
-$t->run();
+$t->try_run('wants ssl_client_certificate')->plan(3);
 
 ###############################################################################
 
-like(http_get('/t'), qr/x:x/, 'plain connection');
-like(get('on'), qr/400 Bad Request/, 'no cert');
-like(get('no.context'), qr/400 Bad Request/, 'no server cert');
-like(get('optional'), qr/NONE:x/, 'no optional cert');
-like(get('optional', '1.example.com'), qr/400 Bad/, 'bad optional cert');
-like(get('optional.no.ca', '1.example.com'), qr/FAILED.*BEGIN/,
-	'bad optional_no_ca cert');
-like(get('off', '2.example.com'), qr/NONE/, 'off cert');
-like(get('off', '3.example.com'), qr/NONE/, 'off cert trusted');
+like(get('trusted', '2.example.com'), qr/SUCCESS/, 'good cert trusted only');
+like(get('trusted', '3.example.com'), qr/400 Bad/, 'bad cert trusted only');
 
-like(get('localhost', '2.example.com'), qr/SUCCESS.*BEGIN/, 'good cert');
-like(get('optional', '2.example.com'), qr/SUCCESS.*BEGI/, 'good cert optional');
-like(get('optional', '3.example.com'), qr/SUCCESS.*BEGIN/, 'good cert trusted');
-
-TODO: {
-local $TODO = 'broken TLSv1.3 CA list in LibreSSL'
-	if $t->has_module('LibreSSL') && test_tls13();
-
-my $ca = join ' ', get('optional', '3.example.com');
-is($ca, '/CN=2.example.com', 'no trusted sent');
-
-}
-
-like(get('optional', undef, 'localhost'), qr/421 Misdirected/, 'misdirected');
+my $ca = join ' ', get('trusted', '2.example.com');
+is($ca, '', 'no ca sent trusted only');
 
 ###############################################################################
-
-sub test_tls13 {
-	get('optional') =~ /TLSv1.3/;
-}
 
 sub get {
 	my ($sni, $cert, $host) = @_;
@@ -180,6 +104,8 @@ sub get {
 		start => 1,
 		SSL => 1,
 		SSL_hostname => $sni,
+		SSL_version => 'SSLv23',
+		SSL_cipher_list => 'ALL:@SECLEVEL=0',
 		$cert ? (
 		SSL_cert_file => "$d/$cert.crt",
 		SSL_key_file => "$d/$cert.key"
